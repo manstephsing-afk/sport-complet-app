@@ -1,0 +1,74 @@
+#!/bin/bash
+# ============================================================
+#  EduAdmin — Générateur de Keystore Android
+#  Exécutez ce script UNE SEULE FOIS sur votre machine locale
+# ============================================================
+
+set -e
+
+echo ""
+echo "🔐 EduAdmin — Création du Keystore Android"
+echo "==========================================="
+echo ""
+
+# Vérifier que keytool est installé
+if ! command -v keytool &> /dev/null; then
+    echo "❌ keytool non trouvé. Installez Java JDK 17 :"
+    echo "   https://adoptium.net/"
+    exit 1
+fi
+
+# Paramètres
+KEYSTORE_FILE="eduadmin.jks"
+KEY_ALIAS="eduadmin"
+VALIDITY=10000  # ~27 ans
+
+echo "📝 Entrez vos informations :"
+read -p "   Mot de passe keystore (min 6 chars) : " -s KEYSTORE_PASSWORD
+echo ""
+read -p "   Mot de passe de la clé (min 6 chars): " -s KEY_PASSWORD
+echo ""
+read -p "   Votre nom complet                    : " YOUR_NAME
+read -p "   Nom de l'organisation                : " ORG_NAME
+read -p "   Ville                                : " CITY
+read -p "   Pays (FR, CG, SN, CI…)              : " COUNTRY
+
+echo ""
+echo "🔨 Génération du keystore..."
+
+keytool -genkey -v \
+  -keystore "$KEYSTORE_FILE" \
+  -alias "$KEY_ALIAS" \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity $VALIDITY \
+  -storepass "$KEYSTORE_PASSWORD" \
+  -keypass "$KEY_PASSWORD" \
+  -dname "CN=$YOUR_NAME, O=$ORG_NAME, L=$CITY, C=$COUNTRY" \
+  2>/dev/null
+
+echo ""
+echo "✅ Keystore créé : $KEYSTORE_FILE"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📋 COPIEZ ces valeurs dans GitHub → Settings → Secrets"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Secret name : KEYSTORE_FILE"
+echo "Secret value (base64) :"
+base64 "$KEYSTORE_FILE"
+echo ""
+echo "Secret name : KEYSTORE_PASSWORD"
+echo "Secret value : $KEYSTORE_PASSWORD"
+echo ""
+echo "Secret name : KEY_ALIAS"
+echo "Secret value : $KEY_ALIAS"
+echo ""
+echo "Secret name : KEY_PASSWORD"
+echo "Secret value : $KEY_PASSWORD"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "⚠️  Gardez $KEYSTORE_FILE en lieu sûr !"
+echo "    Sans lui vous ne pourrez plus mettre à jour l'app."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""

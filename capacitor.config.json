@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <!-- Fond -->
+  <rect width="192" height="192" rx="40" fill="#00a884"/>
+
+  <!-- Bâtiment école -->
+  <rect x="44" y="80" width="104" height="76" rx="6" fill="white" opacity="0.95"/>
+
+  <!-- Toit -->
+  <polygon points="36,84 96,36 156,84" fill="white"/>
+
+  <!-- Porte -->
+  <rect x="80" y="114" width="32" height="42" rx="4" fill="#00a884"/>
+
+  <!-- Fenêtres -->
+  <rect x="54" y="94" width="22" height="18" rx="3" fill="#00a884" opacity="0.7"/>
+  <rect x="116" y="94" width="22" height="18" rx="3" fill="#00a884" opacity="0.7"/>
+
+  <!-- Drapeau -->
+  <line x1="96" y1="36" x2="96" y2="18" stroke="white" stroke-width="3" stroke-linecap="round"/>
+  <polygon points="96,18 112,25 96,32" fill="#f0c050"/>
+</svg>

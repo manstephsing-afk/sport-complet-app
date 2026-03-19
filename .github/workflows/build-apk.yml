@@ -1,0 +1,204 @@
+name: 🏗️ Build & Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build APK Android (cloud complet)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      # ── 1. Code ─────────────────────────────────────────────────────────────
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js ──────────────────────────────────────────────────────────
+      - name: ⚙️ Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── 3. Java 17 ──────────────────────────────────────────────────────────
+      - name: ☕ Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ── 4. Android SDK ──────────────────────────────────────────────────────
+      - name: 📱 Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      # ── 5. Installer dépendances npm ────────────────────────────────────────
+      - name: 📦 npm install
+        run: npm install
+
+      # ── 6. Build React ──────────────────────────────────────────────────────
+      - name: 🔨 Build React (Vite)
+        run: npm run build
+
+      # ── 7. Initialiser Capacitor ────────────────────────────────────────────
+      - name: ⚡ Capacitor init
+        run: npx cap init EduAdmin com.eduadmin.app --web-dir dist
+
+      # ── 8. Ajouter plateforme Android ───────────────────────────────────────
+      - name: 📱 Capacitor add android
+        run: npx cap add android
+
+      # ── 9. Sync Capacitor → Android ─────────────────────────────────────────
+      - name: 🔄 Capacitor sync
+        run: npx cap sync android
+
+      # ── 10. Appliquer le thème sombre WhatsApp ──────────────────────────────
+      - name: 🎨 Appliquer thème sombre
+        run: |
+          # styles.xml — thème WhatsApp dark
+          cat > android/app/src/main/res/values/styles.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <style name="AppTheme" parent="Theme.AppCompat.DayNight.DarkActionBar">
+              <item name="colorPrimary">#00a884</item>
+              <item name="colorPrimaryDark">#1f2c34</item>
+              <item name="colorAccent">#00a884</item>
+              <item name="android:windowBackground">#0a1419</item>
+              <item name="android:statusBarColor">#1f2c34</item>
+              <item name="android:navigationBarColor">#0a1419</item>
+              <item name="android:windowLightStatusBar">false</item>
+            </style>
+            <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+              <item name="android:background">#0a1419</item>
+              <item name="android:statusBarColor">#0a1419</item>
+              <item name="android:navigationBarColor">#0a1419</item>
+              <item name="android:windowLightStatusBar">false</item>
+              <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+              <item name="windowSplashScreenBackground">#0a1419</item>
+            </style>
+            <style name="AppTheme.NoActionBar" parent="AppTheme">
+              <item name="windowActionBar">false</item>
+              <item name="windowNoTitle">true</item>
+            </style>
+          </resources>
+          EOF
+
+          # network_security_config.xml — autorise api.anthropic.com
+          mkdir -p android/app/src/main/res/xml
+          cat > android/app/src/main/res/xml/network_security_config.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+            <domain-config cleartextTrafficPermitted="false">
+              <domain includeSubdomains="true">api.anthropic.com</domain>
+              <domain includeSubdomains="true">fonts.googleapis.com</domain>
+              <domain includeSubdomains="true">fonts.gstatic.com</domain>
+            </domain-config>
+          </network-security-config>
+          EOF
+
+          # Mettre à jour AndroidManifest pour network security config
+          sed -i 's|<application|<application android:networkSecurityConfig="@xml/network_security_config" android:usesCleartextTraffic="false"|' \
+            android/app/src/main/AndroidManifest.xml || true
+
+          echo "✅ Thème et config réseau appliqués"
+
+      # ── 11. Décoder le Keystore ─────────────────────────────────────────────
+      - name: 🔐 Decode Keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_FILE }}" ]; then
+            echo "${{ secrets.KEYSTORE_FILE }}" | base64 --decode > android/app/eduadmin.jks
+            echo "✅ Keystore décodé"
+          else
+            echo "⚠️  Pas de keystore — APK debug sera généré"
+          fi
+
+      # ── 12. Build APK ───────────────────────────────────────────────────────
+      - name: 🏗️ Build APK
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [ -f app/eduadmin.jks ]; then
+            echo "🔐 Build APK Release signé..."
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file=$(pwd)/app/eduadmin.jks \
+              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+            APK_TYPE="release"
+          else
+            echo "🔓 Build APK Debug..."
+            ./gradlew assembleDebug
+            APK_TYPE="debug"
+          fi
+          echo "APK_TYPE=$APK_TYPE" >> $GITHUB_ENV
+
+      # ── 13. Localiser et renommer l'APK ────────────────────────────────────
+      - name: 📝 Préparer l'APK
+        run: |
+          TAG="${GITHUB_REF_NAME:-v1.0.0}"
+          mkdir -p artifacts
+
+          # Chercher l'APK selon le type de build
+          if [ "${{ env.APK_TYPE }}" = "release" ]; then
+            APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          else
+            APK=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -1)
+          fi
+
+          if [ -z "$APK" ]; then
+            echo "❌ APK non trouvé !"
+            find android/app/build/outputs -name "*.apk" 2>/dev/null
+            exit 1
+          fi
+
+          cp "$APK" "artifacts/EduAdmin-${TAG}.apk"
+          echo "✅ APK prêt : EduAdmin-${TAG}.apk ($(du -sh artifacts/EduAdmin-${TAG}.apk | cut -f1))"
+          echo "APK_NAME=EduAdmin-${TAG}.apk" >> $GITHUB_ENV
+
+      # ── 14. Upload artifact (toujours disponible dans Actions) ─────────────
+      - name: 📤 Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduAdmin-APK
+          path: artifacts/*.apk
+          retention-days: 30
+
+      # ── 15. GitHub Release (seulement sur tag) ─────────────────────────────
+      - name: 🚀 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "EduAdmin ${{ github.ref_name }}"
+          body: |
+            ## 📱 EduAdmin ${{ github.ref_name }}
+
+            ### ⬇️ Installation
+            1. Téléchargez **${{ env.APK_NAME }}** ci-dessous
+            2. Sur Android : **Paramètres → Sécurité → Sources inconnues** ✅
+            3. Ouvrez le fichier APK et appuyez sur **Installer**
+
+            ### ✨ Fonctionnalités
+            - 🏠 Tableau de bord administratif
+            - 🎓 Gestion des élèves & classes (fiches détaillées)
+            - 📋 Notes & bulletins générés par IA Claude
+            - 💬 Chat Élèves style WhatsApp
+            - 👨‍👩‍👧 Chat Parents · Professeurs
+            - ✉️ Messagerie administration
+            - 📅 Emploi du temps interactif
+            - 🤖 Assistant IA pédagogique
+
+            ---
+            > 🤖 Construit automatiquement par GitHub Actions
+            > 📦 Type de build : ${{ env.APK_TYPE }}
+          files: artifacts/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
